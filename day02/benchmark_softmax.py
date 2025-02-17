@@ -6,6 +6,7 @@ import torch
 import triton
 import matplotlib.pyplot as plt
 from softmax import softmax_2_rows
+from softmax_v2 import softmax_2_rows_v2
 import time
 from matplotlib import rcParams
 
@@ -32,13 +33,13 @@ def benchmark_pytorch_softmax(x, num_warmup=25, num_tests=100):
 def benchmark_triton_softmax(x, num_warmup=25, num_tests=100):
     # 预热
     for _ in range(num_warmup):
-        _ = softmax_2_rows(x)
+        _ = softmax_2_rows_v2(x)
     
     torch.cuda.synchronize()
     start = time.perf_counter()
     
     for _ in range(num_tests):
-        _ = softmax_2_rows(x)
+        _ = softmax_2_rows_v2(x)
     
     torch.cuda.synchronize()
     end = time.perf_counter()

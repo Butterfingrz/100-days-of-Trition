@@ -73,6 +73,7 @@ def matmul_v1(
     BLOCK_SIZE_M = 64
     BLOCK_SIZE_N = 64
     BLOCK_SIZE_K = 32
+    GROUP_SIZE_M = 8
     # num_stages: tl.constexpr = 3,     # 可以尝试减小到2或1
     # num_warps: tl.constexpr = 4       # 可以尝试4或8
     grid = ((triton.cdiv(M, BLOCK_SIZE_M), triton.cdiv(N, BLOCK_SIZE_N), 1))

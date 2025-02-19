@@ -175,7 +175,7 @@ for fp8_inputs in [False, True]:
     configs.append(
         triton.testing.Benchmark(
             x_names=["M", "N", "K"],  # Argument names to use as an x-axis for the plot 作为绘图 x 轴的参数名
-            x_vals=[128 * i for i in range(2, 33)],  # Different possible values for `x_name` `x_names` 参数的不同可能值
+            x_vals=[128 * i for i in range(2, 70)],  # Different possible values for `x_name` `x_names` 参数的不同可能值
             line_arg="provider",  # Argument name whose value corresponds to a different line in the plot 对应绘图中不同线的参数名
             # Possible values for `line_arg` `line_arg` 的可能值
             # Don't compare to cublas for fp8 cases as torch.matmul doesn't support fp8 at the moment. 在 fp8 情况下不与 cuBLAS 比较，因为 torch.matmul 目前不支持 fp8。
@@ -203,5 +203,5 @@ def benchmark(M, N, K, provider, fp8_inputs):
     perf = lambda ms: 2 * M * N * K * 1e-12 / (ms * 1e-3)
     return perf(ms), perf(max_ms), perf(min_ms)
 
-
-benchmark.run(show_plots=True, print_data=True,save_path='a1.png')
+if __name__ == '__main__':  # 添加这个保护条件
+    benchmark.run(show_plots=True, print_data=True, save_path='a1.png')

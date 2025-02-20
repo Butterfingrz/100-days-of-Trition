@@ -184,55 +184,19 @@ def fp8_gemm_kernel(
     tl.store(c_ptr, accumulator, mask=mask)
 
 
-def fp8_gemm(a: torch.Tensor, b: torch.Tensor, as_: torch.Tensor, bs_: torch.Tensor):
-    """
-    Perform a matrix multiplication using FP8 precision.
+# # 修改自动调优配置（更适合FP8的配置）
+# FP8_GEMM_CONFIGS = [
+#     Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64}, num_stages=4),
+#     Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 64}, num_stages=4)
+# ]
 
-    Args:
-        a (torch.Tensor): The first input matrix, must be contiguous.
-        a_s (torch.Tensor): The scaling factor for the first input matrix, must be contiguous.
-        b (torch.Tensor): The second input matrix, must be contiguous.
-        b_s (torch.Tensor): The scaling factor for the second input matrix, must be contiguous.
-
-    Returns:
-        torch.Tensor: The result of the matrix multiplication.
-    """
-    assert a.is_contiguous() and b.is_contiguous()
-    assert as_.is_contiguous() and bs_.is_contiguous()
-
-    K = a.size(-1)
-    M = a.numel() // K
-    N = b.size(-1)
-    
-    # 修正输出张量形状
-    C = torch.empty((*a.shape[:-1], N), dtype=torch.float32, device=a.device)
-    
-    # 调整网格计算
-    grid = lambda meta: (
-        triton.cdiv(M, meta['BLOCK_SIZE_M']),
-        triton.cdiv(N, meta['BLOCK_SIZE_N'])
-    )
-    
-    # 移除手动指定的BLOCK_SIZE参数
-    fp8_gemm_kernel[grid](
-        a, b, C, as_, bs_,
-        M, N, K  # 只传递必要参数
-    )
-    return C
-
-# 修改自动调优配置（更适合FP8的配置）
-FP8_GEMM_CONFIGS = [
-    Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64}, num_stages=4),
-    Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 64}, num_stages=4)
-]
-
-@triton.autotune(
-    configs=[
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32}, num_stages=2, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32}, num_stages=3, num_warps=4),
-    ],
-    key=['M', 'N', 'K'],
-)
+# @triton.autotune(
+#     configs=[
+#         triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32}, num_stages=2, num_warps=4),
+#         triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32}, num_stages=3, num_warps=4),
+#     ],
+#     key=['M', 'N', 'K'],
+# )
 @triton.jit
 def fp8_gemm_kernel(
     a_ptr, b_ptr, c_ptr,
@@ -287,7 +251,34 @@ def fp8_gemm_kernel(
     c_ptrs = c_ptr + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
     tl.store(c_ptrs, acc, mask=(offs_m[:, None] < M) & (offs_n[None, :] < N))
 
-def fp8_gemm(a: torch.Tensor, b: torch.Tensor, a_scale: torch.Tensor, b_scale: torch.Tensor):
+
+
+# def fp8_gemm(a: torch.Tensor, b: torch.Tensor):
+#     """修改后的接口，接受FP16输入"""
+#     # 内部量化处理
+#     a_fp8, a_scale = act_quant(a)
+#     b_fp8, b_scale = act_quant(b)
+    
+#     # 原有计算逻辑
+#     M, K = a.shape
+#     K, N = b.shape
+#     c = torch.empty((M, N), device=a.device, dtype=torch.float32)
+    
+#     # 调整网格计算
+    # grid = lambda meta: (
+    #     triton.cdiv(M, meta['BLOCK_SIZE_M']),
+    #     triton.cdiv(N, meta['BLOCK_SIZE_N'])
+    # )
+    
+#     # 移除手动指定的BLOCK_SIZE参数
+#     fp8_gemm_kernel[grid](
+#         a_fp8, b_fp8, c,
+#         a_scale, b_scale,
+#         M, N, K  # 只传递必要参数
+#     )
+#     return c
+
+def fp8_gemm(a: torch.Tensor, b: torch.Tensor):
     """
     FP8矩阵乘法接口函数
     参数:
@@ -299,28 +290,32 @@ def fp8_gemm(a: torch.Tensor, b: torch.Tensor, a_scale: torch.Tensor, b_scale: t
         c: (M, N) 输出矩阵，FP32格式
     """
     # 参数校验
-    assert a.dtype == torch.float8_e4m3fn, "输入矩阵必须是FP8格式"
-    assert b.dtype == torch.float8_e4m3fn, "输入矩阵必须是FP8格式"
+    assert b.dtype == torch.float32, "输入矩阵必须是FP32，进行动态量化"
     assert a.is_contiguous() and b.is_contiguous(), "输入矩阵必须是连续内存布局"
     
+    a_fp8, a_scale = act_quant(a)
+    b_fp8, b_scale = act_quant(b)
     M, K = a.shape
     K, N = b.shape
     c = torch.empty((M, N), device=a.device, dtype=torch.float32)
     
-    # 定义内核启动参数
-    grid = lambda _: (
-        triton.cdiv(M, 64),  # 根据自动调优配置选择块大小
-        triton.cdiv(N, 64),
+    grid = lambda meta: (
+        triton.cdiv(M, meta['BLOCK_SIZE_M']),
+        triton.cdiv(N, meta['BLOCK_SIZE_N'])
     )
     
-    # 启动内核
+    # 启动内核（添加缺失的参数）
     fp8_gemm_kernel[grid](
-        a, b, c,
+        a_fp8, b_fp8, c,
         a_scale, b_scale,
         M, N, K,
-        a.stride(0), a.stride(1),
+        a.stride(0), a.stride(1),  # 添加步长参数
         b.stride(0), b.stride(1),
         c.stride(0), c.stride(1),
+        BLOCK_SIZE_M=64,  # 添加默认块大小参数
+        BLOCK_SIZE_N=64,
+        BLOCK_SIZE_K=32,
+        num_stages=4  # 添加流水线阶段参数
     )
     return c
 

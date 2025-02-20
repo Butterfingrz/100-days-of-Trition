@@ -2,8 +2,8 @@ import torch
 import triton
 import triton.testing
 from day04.matmul_fp16_v2 import matmul_v2
-from day05.fp8_gemm import act_quant, fp8_gemm
-from day05.int8_gemm import matmul_int8
+from day05.block_fp8_gemm import act_quant, fp8_gemm
+from day05.global_int8_gemm import matmul_int8
 
 # 修改后的配置
 configs = [
@@ -28,8 +28,8 @@ def benchmark(M, N, K, provider):
     a = torch.randn((M, K), device='cuda', dtype=torch.float16)
     b = torch.randn((K, N), device='cuda', dtype=torch.float16)
 
-    a_fp32 = torch.randn((M, K), device='cuda', dtype=torch.float32)
-    b_fp32 = torch.randn((K, N), device='cuda', dtype=torch.float32)
+    # a_fp32 = torch.randn((M, K), device='cuda', dtype=torch.float16)
+    # b_fp32 = torch.randn((K, N), device='cuda', dtype=torch.float16)
 
     # 修改后的FP8量化处理（在需要时动态量化）
     quantiles = [0.5, 0.2, 0.8]
@@ -40,13 +40,13 @@ def benchmark(M, N, K, provider):
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul_v2(a, b), quantiles=quantiles)
     elif provider == "triton-int8":
         ms, min_ms, max_ms = triton.testing.do_bench(
-            lambda: matmul_int8(a_fp32, b_fp32),
+            lambda: matmul_int8(a, b),
             quantiles=quantiles
         )
     elif provider == "triton-fp8":
         # 动态量化处理
         ms, min_ms, max_ms = triton.testing.do_bench(
-            lambda: fp8_gemm(a_fp32, b_fp32),  # 使用act_quant进行动态量化
+            lambda: fp8_gemm(a, b),  # 使用act_quant进行动态量化
             quantiles=quantiles
         )
 

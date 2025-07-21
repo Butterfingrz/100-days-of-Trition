@@ -3,24 +3,24 @@ import triton.language as tl
 import torch
 from triton.runtime import driver
 
-# #* 定义自动调优配置
-@triton.autotune(
-    configs=[
-        triton.Config({'num_stages': 1, 'num_warps': 1}, num_warps=1),
-        triton.Config({'num_stages': 1, 'num_warps': 2}, num_warps=2),
-        triton.Config({'num_stages': 1, 'num_warps': 4}, num_warps=4),
-        triton.Config({'num_stages': 1, 'num_warps': 8}, num_warps=8),
-        triton.Config({'num_stages': 2, 'num_warps': 1}, num_warps=1),
-        triton.Config({'num_stages': 2, 'num_warps': 2}, num_warps=2),
-        triton.Config({'num_stages': 2, 'num_warps': 4}, num_warps=4),
-        triton.Config({'num_stages': 2, 'num_warps': 8}, num_warps=8),
-        triton.Config({'num_stages': 4, 'num_warps': 1}, num_warps=1),
-        triton.Config({'num_stages': 4, 'num_warps': 2}, num_warps=2),
-        triton.Config({'num_stages': 4, 'num_warps': 4}, num_warps=4),
-        triton.Config({'num_stages': 4, 'num_warps': 8}, num_warps=8),
-    ],
-    key=['n_rows', 'n_cols'],  #* 根据输入形状选择最佳配置
-)
+# # #* 定义自动调优配置
+# @triton.autotune(
+#     configs=[
+#         triton.Config({'num_stages': 1, 'num_warps': 1}, num_warps=1),
+#         triton.Config({'num_stages': 1, 'num_warps': 2}, num_warps=2),
+#         triton.Config({'num_stages': 1, 'num_warps': 4}, num_warps=4),
+#         triton.Config({'num_stages': 1, 'num_warps': 8}, num_warps=8),
+#         triton.Config({'num_stages': 2, 'num_warps': 1}, num_warps=1),
+#         triton.Config({'num_stages': 2, 'num_warps': 2}, num_warps=2),
+#         triton.Config({'num_stages': 2, 'num_warps': 4}, num_warps=4),
+#         triton.Config({'num_stages': 2, 'num_warps': 8}, num_warps=8),
+#         triton.Config({'num_stages': 4, 'num_warps': 1}, num_warps=1),
+#         triton.Config({'num_stages': 4, 'num_warps': 2}, num_warps=2),
+#         triton.Config({'num_stages': 4, 'num_warps': 4}, num_warps=4),
+#         triton.Config({'num_stages': 4, 'num_warps': 8}, num_warps=8),
+#     ],
+#     key=['n_rows', 'n_cols'],  #* 根据输入形状选择最佳配置
+# )
 @triton.jit
 def softmax_kernel_v2(
     input_ptr,
@@ -30,8 +30,8 @@ def softmax_kernel_v2(
     input_row_stride,
     output_row_stride,
     BLOCK_SIZE: tl.constexpr,
-    num_stages: tl.constexpr,
-    num_warps: tl.constexpr, 
+    num_stages: tl.constexpr = 1,
+    num_warps: tl.constexpr = 4, 
 ):
     #* （1）获取当前线程的行索引
     row_start = tl.program_id(0)   #! 当前的program id
@@ -67,7 +67,7 @@ def softmax_kernel_v2(
 # WARP_SIZE = properties["warpSize"]
 # target = triton.runtime.driver.active.get_current_target()
 
-def softmax(x: torch.Tensor):
+def softmax_v2(x: torch.Tensor):
     n_rows, n_cols = x.shape
     BLOCK_SIZE = triton.next_power_of_2(n_cols)
 
@@ -89,18 +89,18 @@ def softmax(x: torch.Tensor):
 if __name__ == "__main__":
     print("测试小矩阵...")
     x_small = torch.randn(4096, 4096, dtype=torch.float16, device="cuda")
-    y_small = softmax(x_small)
+    y_small = softmax_v2(x_small)
     assert torch.allclose(y_small, torch.softmax(x_small,dtype=torch.float16,dim=1), atol=1e-3, rtol=1e-3)
     print("小矩阵测试通过！")
     
     print("测试中等矩阵...")
     x_medium = torch.randn(8192, 8192, dtype=torch.float16, device="cuda")
-    y_medium = softmax(x_medium)
+    y_medium = softmax_v2(x_medium)
     assert torch.allclose(y_medium, torch.softmax(x_medium, dtype=torch.float16, dim=1), atol=1e-3, rtol=1e-3)
     print("中等矩阵测试通过！")
     
     print("测试大矩阵...")
     x_large = torch.randn(2048, 151936, dtype=torch.float16, device="cuda")
-    y_large = softmax(x_large)
+    y_large = softmax_v2(x_large)
     assert torch.allclose(y_large, torch.softmax(x_large, dtype=torch.float16, dim=1), atol=1e-3, rtol=1e-3)
     print("大矩阵测试通过！")    

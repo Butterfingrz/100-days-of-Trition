@@ -33,7 +33,7 @@ def softmax_kernel(
     tl.store(output_ptrs, softmax_output, mask=col_offset < n_cols)
 
 
-def softmax(x: torch.Tensor):
+def softmax_v1(x: torch.Tensor):
     n_rows, n_cols = x.shape
     y = torch.empty_like(x)
     BLOCK_SIZE = triton.next_power_of_2(n_cols)
@@ -60,19 +60,19 @@ def softmax(x: torch.Tensor):
 if __name__ == "__main__":
     print("测试小矩阵...")
     x_small = torch.randn(4096, 4096, dtype=torch.float16, device="cuda")
-    y_small = softmax(x_small)
+    y_small = softmax_v1(x_small)
     assert torch.allclose(y_small, torch.softmax(x_small,dtype=torch.float16,dim=1), atol=1e-3, rtol=1e-3)
     print("小矩阵测试通过！")
     
     print("测试中等矩阵...")
     x_medium = torch.randn(8192, 8192, dtype=torch.float16, device="cuda")
-    y_medium = softmax(x_medium)
+    y_medium = softmax_v1(x_medium)
     assert torch.allclose(y_medium, torch.softmax(x_medium, dtype=torch.float16, dim=1), atol=1e-3, rtol=1e-3)
     print("中等矩阵测试通过！")
     
     print("测试大矩阵...")
     x_large = torch.randn(2048, 151936, dtype=torch.float16, device="cuda")
-    y_large = softmax(x_large)
+    y_large = softmax_v1(x_large)
     assert torch.allclose(y_large, torch.softmax(x_large, dtype=torch.float16, dim=1), atol=1e-3, rtol=1e-3)
     print("大矩阵测试通过！")
     
